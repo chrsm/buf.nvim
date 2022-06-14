@@ -1,0 +1,119 @@
+import "plenary.job" as Job
+import "plenary.path" as Path
+import "buf.menu" as menu
+import "telescope.previewers" as tsprv
+
+get_cwd = ->
+  cwd = vim.fn.expand "%"
+  unless cwd
+    print "no cwd"
+    cwd = vim.fn.getcwd!
+  else
+    print "cwd thru file"
+    p = Path\new cwd
+    cwd = p\parent!.filename
+
+  cwd
+
+get_file = ->
+  f = vim.fn.expand "%"
+  p = Path\new f
+
+  unless p\is_file!
+    error "nvim-buf: #{ f } is not a file"
+
+  f
+
+run_job = (subcmd, subargs = {}) ->
+  unless subcmd
+    error "nvim-buf(internal): no subcommand specified; please report bug"
+
+  cmdargs = { subcmd }
+  table.insert cmdargs, v for v in *subargs
+
+  j = Job\new
+    cwd: get_cwd!
+    command: "buf"
+    args: cmdargs
+    --[[on_stderr: (err, data) ->
+      print vim.inspect err
+      print vim.inspect data]]
+
+  j\sync!
+
+output = (r, ok) ->
+  print (table.concat r, "\n"), ok
+
+buf =
+  config:
+    x: true
+
+buf.lint = ->
+  r, ok = run_job "lint", { "#{ get_cwd! }" }
+  unless ok
+    error "nvim-buf: unable to run buf lint - is it installed?"
+
+  output r, ok
+
+buf.breaking = ->
+  r, ok = run_job "breaking"
+  unless ok
+    error "nvim-buf: unable to run buf breaking - is it installed?"
+
+  output r, ok
+
+buf.build = ->
+  r, ok = run_job "build"
+  unless ok
+    error "nvim-buf: unable to run buf build"
+
+  output r, ok
+
+buf.generate = ->
+  r, ok = run_job "generate"
+  unless ok
+    error "nvim-buf: unable to run buf generate"
+
+  output r, ok
+
+buf.format = ->
+  r, ok = run_job "format", { "-w", get_file! }
+  unless ok
+    error "nvim-buf: unable to run buf format"
+
+  -- reload buffer
+  vim.cmd [[ :edit ]]
+
+  output r, ok
+
+buf.registry = ->
+  r, ok = run_job "registry"
+  unless ok
+    error "nvim-buf: unable to run buf registry"
+
+  output r, ok
+
+buf.ls = ->
+  r, ok = run_job "ls-files"
+  unless ok
+    error "nvim-buf: unable to list files"
+
+  output r, ok
+
+  files = {}
+  for v in *r
+    files[] = { id: "0", title: v, filename: v }
+  files
+
+buf.ls_menu = ->
+  files = buf.ls!
+
+  make_entry = (v) -> { value: v, display: v.title, ordinal: v.title, path: v.title }
+  make_title = (v) -> v.title
+
+  menu.protos files, {}
+
+buf.setup = (opt = {}) ->
+  nil
+
+export default buf
