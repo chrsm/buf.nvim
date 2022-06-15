@@ -1,0 +1,38 @@
+import "telescope.finders" as tsfinder
+import "telescope.pickers" as tspicker
+import "telescope.pickers.entry_display" as tsdisp
+import "telescope.config" as tsconf
+
+protos_menu = (results = {}, opts = {}) ->
+  displayer = tsdisp.create
+    separator: " "
+    items:
+      * remaining: true
+
+  make_display = (entry) ->
+    displayer {
+      { entry.path }
+    }
+
+  finder = tsfinder.new_table
+    :results
+    entry_maker: (entry) ->
+      entry.value = entry.path
+      entry.ordinal = entry.path
+      entry.display = make_display
+      entry
+
+  p = tspicker.new {}, {
+    prompt_title: "protobufs"
+    :finder
+    previewer: tsconf.values.file_previewer {
+      cwd: opts.cwd
+    }
+    sorter: tsconf.values.generic_sorter {}
+  }
+
+  p\find!
+
+export default {
+  protos: protos_menu
+}

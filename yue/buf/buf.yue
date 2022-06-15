@@ -4,16 +4,7 @@ import "buf.menu" as menu
 import "telescope.previewers" as tsprv
 
 get_cwd = ->
-  cwd = vim.fn.expand "%"
-  unless cwd
-    print "no cwd"
-    cwd = vim.fn.getcwd!
-  else
-    print "cwd thru file"
-    p = Path\new cwd
-    cwd = p\parent!.filename
-
-  cwd
+  vim.loop.cwd!
 
 get_file = ->
   f = vim.fn.expand "%"
@@ -35,9 +26,6 @@ run_job = (subcmd, subargs = {}) ->
     cwd: get_cwd!
     command: "buf"
     args: cmdargs
-    --[[on_stderr: (err, data) ->
-      print vim.inspect err
-      print vim.inspect data]]
 
   j\sync!
 
@@ -101,17 +89,16 @@ buf.ls = ->
   output r, ok
 
   files = {}
-  for v in *r
-    files[] = { id: "0", title: v, filename: v }
+  for i, v in ipairs r
+    files[] = { id: i, title: v, path: v }
   files
 
 buf.ls_menu = ->
   files = buf.ls!
 
-  make_entry = (v) -> { value: v, display: v.title, ordinal: v.title, path: v.title }
-  make_title = (v) -> v.title
-
-  menu.protos files, {}
+  menu.protos files, {
+    cwd: get_cwd!
+  }
 
 buf.setup = (opt = {}) ->
   nil
