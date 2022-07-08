@@ -22,27 +22,61 @@ run_job = (subcmd, subargs = {}) ->
   cmdargs = { subcmd }
   table.insert cmdargs, v for v in *subargs
 
+  errs = {}
   j = Job\new
     cwd: get_cwd!
     command: "buf"
     args: cmdargs
+    on_stderr: (err, data) ->
+      errs[] = err
 
-  j\sync!
+  r, ok = j\sync!
+  r, ok, errs
 
 output = (r, ok) ->
   print (table.concat r, "\n"), ok
 
 buf =
   config:
-    x: true
+    autoformat: true
 
-buf.lint = ->
-  r, ok = run_job "lint", { "#{ get_cwd! }" }
+internal = {}
+
+internal.lint = (file) ->
+  r, ok = run_job "lint", { "--path", file }
   unless ok
     error "nvim-buf: unable to run buf lint - is it installed?"
 
+  -- str path:num line:num column:str issue
+  issues = {}
+  for v in *r
+    path, lnum, col, message = v\match "([^:]+):(%d+):(%d+):([^:]+)"
+
+    unless path and lnum and col and message
+      error "bufbuild.nvim: failed to detect data from #{ v }"
+
+    issues[] =
+      lnum: tonumber lnum
+      col: tonumber col
+      :message
+      -- could probably determine this somehow, idk
+      severity: vim.diagnostic.severity.WARN
+  
+  issues
+
+internal.ls = ->
+  r, ok = run_job "ls-files"
+  unless ok
+    error "nvim-buf: unable to list files"
+
   output r, ok
 
+  files = {}
+  for i, v in ipairs r
+    files[] = { id: i, title: v, path: v }
+  files
+
+-- to be made into internals --
 buf.breaking = ->
   r, ok = run_job "breaking"
   unless ok
@@ -56,23 +90,29 @@ buf.build = ->
     error "nvim-buf: unable to run buf build"
 
   output r, ok
+-- end to-be-internals --
+
+buf.lint = ->
+  issues = vim.fn.expand "%"
+    |> internal.lint
+
+  bufnr = vim.api.nvim_get_current_buf!
+  vim.diagnostic.set internal.ns, bufnr, issues
+  vim.diagnostic.show internal.ns
 
 buf.generate = ->
   r, ok = run_job "generate"
-  unless ok
-    error "nvim-buf: unable to run buf generate"
 
-  output r, ok
+  unless ok != nil and ok == 0
+    print "nvim-buf: buf generate failed with exit code #{ ok }"
 
 buf.format = ->
-  r, ok = run_job "format", { "-w", get_file! }
+  _, ok = run_job "format", { "-w", get_file! }
   unless ok
-    error "nvim-buf: unable to run buf format"
+    print "nvim-buf: buf format failed with exit code #{ ok }"
 
   -- reload buffer
   vim.cmd [[ :edit ]]
-
-  output r, ok
 
 buf.registry = ->
   r, ok = run_job "registry"
@@ -82,25 +122,27 @@ buf.registry = ->
   output r, ok
 
 buf.ls = ->
-  r, ok = run_job "ls-files"
-  unless ok
-    error "nvim-buf: unable to list files"
-
-  output r, ok
-
-  files = {}
-  for i, v in ipairs r
-    files[] = { id: i, title: v, path: v }
-  files
-
-buf.ls_menu = ->
-  files = buf.ls!
+  files = internal.ls!
 
   menu.protos files, {
     cwd: get_cwd!
   }
 
 buf.setup = (opt = {}) ->
+  buf.config = vim.tbl_deep_extend "force", buf.config, opt
+
+  if buf.config.autoformat or true
+    vim.api.nvim_create_autocmd { "BufWritePost" },
+      pattern: "*.proto"
+      command: "execute \"lua require('buf').format()\""
+
+  internal.ns = vim.api.nvim_create_namespace "bufbuild.nvim"
+
+  vim.diagnostic.config {
+    virtual_text: true
+    signs: true
+  }, internal.ns
+
   nil
 
 export default buf
